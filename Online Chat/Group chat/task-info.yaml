@@ -1,0 +1,287 @@
+type: edu
+files:
+- name: src/chat/Main.java
+  visible: true
+  text: |
+    package chat;
+
+    public class Main {
+        public static void main(String[] args) {
+            System.out.println("Hello World!");
+        }
+    }
+  learner_created: false
+- name: src/chat/client/Client.java
+  visible: true
+  text: |-
+    package chat.client;
+
+    import chat.client.utils.PropertyHolder;
+
+    import java.io.DataInputStream;
+    import java.io.DataOutputStream;
+    import java.io.IOException;
+    import java.net.InetAddress;
+    import java.net.Socket;
+    import java.net.SocketException;
+    import java.util.Random;
+    import java.util.Scanner;
+
+    public class Client {
+
+        public static void main(String[] args) {
+            String ip = (String) PropertyHolder.properties.get("ip_address");
+            int port = Integer.valueOf((String) PropertyHolder.properties.get("port"));
+            OutputReader or = null;
+            InputReader ir = null;
+            try (Socket socket = new Socket(InetAddress.getByName(ip), port);
+                 DataInputStream is = new DataInputStream(socket.getInputStream());
+                 DataOutputStream os = new DataOutputStream(socket.getOutputStream())) {
+                ir = new InputReader(is, socket);
+                or = new OutputReader(os);
+                System.out.println("Client started!");
+                ir.start();
+                or.start();
+                or.join();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+
+        }
+
+    }
+
+    class InputReader extends Thread {
+        private DataInputStream is;
+
+        private Socket socket;
+
+        public InputReader(DataInputStream is,
+                           Socket socket) {
+            this.is = is;
+            this.socket = socket;
+        }
+
+        @Override
+        public void run() {
+            while (!socket.isClosed()) {
+                try {
+                    System.out.println(is.readUTF());
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    if (e instanceof SocketException) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    class OutputReader extends Thread {
+
+        private static final String GREETING = "Hello server from client ";
+        private DataOutputStream os;
+
+        private int clientId = new Random().nextInt(30);
+
+        private Scanner scanner = new Scanner(System.in);
+
+        public OutputReader(DataOutputStream os) {
+            this.os = os;
+        }
+
+        private void sendMessage(String message) {
+            try {
+                os.writeUTF(message);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        @Override
+        public void run() {
+            sendMessage(GREETING + clientId);
+            while (true) {
+                if (scanner.hasNextLine()) {
+                    String nextLine = scanner.nextLine();
+                    sendMessage(nextLine);
+                    if ("/exit".equals(nextLine)) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+  learner_created: true
+- name: src/chat/server/resources/server_properties.properties
+  visible: true
+  text: |-
+    ip_address=127.0.0.1
+    port=23456
+  learner_created: true
+- name: src/chat/client/utils/PropertyHolder.java
+  visible: true
+  text: |
+    package chat.client.utils;
+
+    import java.io.FileReader;
+    import java.io.IOException;
+    import java.util.Properties;
+
+    public class PropertyHolder {
+
+        private static final String PATH = "/Users/konradvonkirchbach/IdeaProjects/Online Chat/Online Chat/task/src/chat/client/resources/client_properties.properties";
+        public static Properties properties;
+
+        static {
+            try (FileReader reader = new FileReader(PATH)) {
+                properties = new Properties();
+                properties.load(reader);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+    }
+  learner_created: true
+- name: src/chat/client/resources/client_properties.properties
+  visible: true
+  text: |-
+    ip_address=127.0.0.1
+    port=23456
+  learner_created: true
+- name: src/chat/server/Server.java
+  visible: true
+  text: |-
+    package chat.server;
+
+    import chat.server.utils.PropertyHolder;
+
+    import java.io.DataInputStream;
+    import java.io.DataOutputStream;
+    import java.io.IOException;
+    import java.net.InetAddress;
+    import java.net.ServerSocket;
+    import java.net.Socket;
+    import java.time.Instant;
+    import java.util.Optional;
+
+    public class Server {
+
+        public static void main(String[] args) {
+            System.out.println("Server started!");
+            String ip = PropertyHolder.properties.getProperty("ip_address");
+            int port = Integer.parseInt(PropertyHolder.properties.getProperty("port"));
+            try (ServerSocket serverSocket = new ServerSocket(port, 50, InetAddress.getByName(ip))) {
+                Instant deadLine = Instant.now().plusSeconds(10);
+                serverSocket.setSoTimeout(3_000);
+                while (Instant.now().isBefore(deadLine)) {
+                    try {
+                        Socket socket = serverSocket.accept();
+                        SocketHandler socketHandler = new SocketHandler(socket);
+                        socketHandler.start();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            } catch (/*InterruptedException | */IOException e) {
+                 e.printStackTrace();
+            }
+        }
+    }
+
+    class SocketHandler extends Thread {
+
+        private Socket socket;
+        private DataInputStream is;
+        private DataOutputStream os;
+
+        private String clientId;
+
+        public SocketHandler(Socket socket) {
+            this.socket = socket;
+            try {
+                this.is = new DataInputStream(socket.getInputStream());
+                this.os = new DataOutputStream(socket.getOutputStream());
+            } catch (IOException e) {
+                closeSocket();
+            }
+        }
+
+        @Override
+        public void run()  {
+            if (socket == null) {
+                return;
+            }
+            String[] messageTokens = readMessage().get().split("\\s+");
+            clientId = messageTokens[4].replaceAll("!", "");
+            System.out.println("Client " + clientId + " connected!");
+
+            while (true) {
+                Optional<String> optionalMessage = readMessage();
+                if (optionalMessage.isPresent()) {
+                    String message = optionalMessage.get();
+                    if ("/exit".equals(message)) {
+                        System.out.println("Client " + clientId + " disconnected!");
+                        closeSocket();
+                        break;
+                    }
+                    int numberOfWords = message.split("\\s+").length;
+                    System.out.println("Client " + clientId + " sent: " + message);
+                    writeMessage("Count is " + numberOfWords);
+                }
+            }
+            closeSocket();
+        }
+
+        private synchronized Optional<String> readMessage() {
+            try {
+                return Optional.of(is.readUTF());
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            return Optional.empty();
+        }
+
+        private void writeMessage(String message) {
+            try {
+                os.writeUTF(message);
+                System.out.println("Sent to client " + clientId + ": " + message);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        private void closeSocket() {
+            if (socket != null) {
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+            socket = null;
+        }
+    }
+  learner_created: true
+- name: src/chat/server/user/UserService.java
+  visible: true
+  learner_created: true
+- name: src/chat/server/message/MessageService.java
+  visible: true
+  learner_created: true
+- name: test/Main.class
+  visible: true
+  learner_created: true
+- name: test/bash.sh
+  visible: true
+  learner_created: true
+- name: test/Main.java
+  visible: true
+  learner_created: true
+feedback_link: https://hyperskill.org/learn/step/5410#comment
+status: Solved
+feedback:
+  message: Congratulations!
+  time: Sun, 17 Jul 2022 15:00:10 UTC
+record: 4

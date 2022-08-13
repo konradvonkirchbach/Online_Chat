@@ -1,0 +1,5 @@
+# Project exclude paths
+/.gradle/
+/Online Chat/task/build/
+/Online Chat/task/out/production/classes/
+/Online Chat/task/out/test/classes/

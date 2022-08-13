@@ -1,0 +1,407 @@
+type: edu
+files:
+- name: src/chat/Main.java
+  visible: true
+  text: |
+    package chat;
+
+    public class Main {
+        public static void main(String[] args) {
+            System.out.println("Hello World!");
+        }
+    }
+  learner_created: false
+- name: test/Tests.java
+  visible: false
+  text: |-
+    import org.hyperskill.hstest.dynamic.input.DynamicTestingMethod;
+    import org.hyperskill.hstest.stage.StageTest;
+    import org.hyperskill.hstest.testcase.CheckResult;
+    import org.hyperskill.hstest.testing.TestedProgram;
+
+    import static org.hyperskill.hstest.common.Utils.sleep;
+
+    public class Tests extends StageTest<String> {
+
+        @DynamicTestingMethod
+        CheckResult test() {
+            final TestedProgram server = new TestedProgram("chat.server");
+            final TestedProgram client1 = new TestedProgram("chat.client");
+            final TestedProgram client2 = new TestedProgram("chat.client");
+            final TestedProgram client3 = new TestedProgram("chat.client");
+            client1.setReturnOutputAfterExecution(false);
+            client2.setReturnOutputAfterExecution(false);
+            client3.setReturnOutputAfterExecution(false);
+            final String countIs = "Count is ";
+            final int executePause = 50;
+
+            server.startInBackground();
+
+            //////Client 1
+
+            client1.start();
+            sleep(executePause);
+
+            final String client1Start = client1.getOutput().trim();
+            if (!"Client started!".equals(client1Start))
+                return CheckResult.wrong("Can't get the \"Client started!\" message");
+
+            client1.execute("1 2 3");
+            sleep(executePause);
+
+            final String client1Answer1 = client1.getOutput().trim();
+            if (!(countIs + "3").equals(client1Answer1))
+                return CheckResult.wrong("Client showed a wrong answer!");
+
+            client1.execute("1 2");
+            sleep(executePause);
+
+            final String client1Answer2 = client1.getOutput().trim();
+            if (!(countIs + "2").equals(client1Answer2))
+                return CheckResult.wrong("Client showed a wrong answer!");
+
+            client1.execute("/exit");
+            sleep(executePause);
+
+            //////Client 2
+
+            client2.start();
+            sleep(executePause);
+            client2.getOutput();
+
+            client2.execute("By my hands");
+            sleep(executePause);
+
+            final String client2Answer1 = client2.getOutput().trim();
+            if (!(countIs + "3").equals(client2Answer1))
+                return CheckResult.wrong("Client showed a wrong answer!");
+
+            /////Client 3
+
+            client3.start();
+            sleep(executePause);
+            client3.getOutput();
+
+            client3.execute("Zzzz.");
+            sleep(executePause);
+
+            final String client3Answer1 = client3.getOutput().trim();
+            if (!(countIs + "1").equals(client3Answer1))
+                return CheckResult.wrong("Client showed a wrong answer!");
+
+            client3.execute("want to sleep");
+            sleep(executePause);
+
+            final String client3Answer2 = client3.getOutput().trim();
+            if (!(countIs + "3").equals(client3Answer2))
+                return CheckResult.wrong("Client showed a wrong answer!");
+
+            client3.execute("/exit");
+
+            //////Client 2 AGAIN
+
+            client2.execute("Repeat");
+            sleep(executePause);
+
+            final String client2Answer2 = client2.getOutput().trim();
+            if (!(countIs + "1").equals(client2Answer2))
+                return CheckResult.wrong("Client showed a wrong answer!");
+
+            client2.execute("/exit");
+            sleep(executePause);
+
+            //////Server
+
+            String serverOutput = server.getOutput().trim();
+            String[] serverOutputArray = serverOutput.split("\n");
+
+            try {
+                String client1id = serverOutputArray[1].split(" ")[1];
+                String client2id = serverOutputArray[7].split(" ")[1];
+                String client3id = serverOutputArray[10].split(" ")[1];
+
+                if (!serverOutput.equals(
+                        "Server started!\n" +
+
+                                "Client " + client1id + " connected!\n" +
+                                "Client " + client1id + " sent: 1 2 3\n" +
+                                "Sent to client " + client1id + ": " + countIs + "3\n" +
+                                "Client " + client1id + " sent: 1 2\n" +
+                                "Sent to client " + client1id + ": " + countIs + "2\n" +
+                                "Client " + client1id + " disconnected!\n" +
+
+                                "Client " + client2id + " connected!\n" +
+                                "Client " + client2id + " sent: By my hands\n" +
+                                "Sent to client " + client2id + ": " + countIs + "3\n" +
+
+                                "Client " + client3id + " connected!\n" +
+                                "Client " + client3id + " sent: Zzzz.\n" +
+                                "Sent to client " + client3id + ": " + countIs + "1\n" +
+
+                                "Client " + client3id + " sent: want to sleep\n" +
+                                "Sent to client " + client3id + ": " + countIs + "3\n" +
+                                "Client " + client3id + " disconnected!\n" +
+
+                                "Client " + client2id + " sent: Repeat\n" +
+                                "Sent to client " + client2id + ": " + countIs + "1\n" +
+                                "Client " + client2id + " disconnected!"
+                ))
+                    return CheckResult.wrong(
+                            "Server showed wrong messages or messages in wrong order");
+            } catch (ArrayIndexOutOfBoundsException e) {
+                return CheckResult.wrong(
+                        "Server showed wrong messages or messages in wrong order");
+            }
+
+            return CheckResult.correct();
+        }
+
+    }
+  learner_created: false
+- name: src/chat/client/Client.java
+  visible: true
+  text: |-
+    package chat.client;
+
+    import chat.client.utils.PropertyHolder;
+
+    import java.io.DataInputStream;
+    import java.io.DataOutputStream;
+    import java.io.IOException;
+    import java.io.InputStream;
+    import java.net.InetAddress;
+    import java.net.Socket;
+    import java.net.UnknownHostException;
+    import java.util.Scanner;
+    import java.util.concurrent.ExecutorService;
+    import java.util.concurrent.Executors;
+    import java.util.concurrent.TimeUnit;
+
+    public class Client {
+
+        public static void main(String[] args) {
+            System.out.println("Client started!");
+            String ip = (String) PropertyHolder.properties.get("ip_address");
+            int port = Integer.valueOf((String) PropertyHolder.properties.get("port"));
+            while (true) {
+                try (Socket socket = new Socket(InetAddress.getByName(ip), port);
+                     DataInputStream is = new DataInputStream(socket.getInputStream());
+                     DataOutputStream os = new DataOutputStream(socket.getOutputStream())) {
+                    ExecutorService service = Executors.newFixedThreadPool(2);
+                    InputReader ir = new InputReader(is);
+                    OutputReader or = new OutputReader(os);
+                    service.submit(ir);
+                    service.submit(or);
+                    service.awaitTermination(10, TimeUnit.SECONDS);
+                    break;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+    }
+
+    class InputReader extends Thread {
+        private DataInputStream is;
+
+        public InputReader(DataInputStream is) {
+            this.is = is;
+        }
+
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    if (is.available() > 0) {
+                        System.out.println(is.readUTF());
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    break;
+                }
+            }
+        }
+    }
+
+    class OutputReader extends Thread {
+        private DataOutputStream os;
+
+        public OutputReader(DataOutputStream os) {
+            this.os = os;
+        }
+
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    Scanner scanner = new Scanner(System.in);
+                    if (scanner.hasNextLine()) {
+                        os.writeUTF(scanner.nextLine());
+                        break;
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    break;
+                }
+            }
+        }
+    }
+  learner_created: true
+- name: src/chat/server/resources/server_properties.properties
+  visible: true
+  text: |-
+    ip_address=127.0.0.1
+    port=23456
+  learner_created: true
+- name: src/chat/client/utils/PropertyHolder.java
+  visible: true
+  text: |
+    package chat.client.utils;
+
+    import java.io.FileReader;
+    import java.io.IOException;
+    import java.util.Properties;
+
+    public class PropertyHolder {
+
+        private static final String PATH = "/Users/konradvonkirchbach/IdeaProjects/Online Chat/Online Chat/task/src/chat/client/resources/client_properties.properties";
+        public static Properties properties;
+
+        static {
+            try (FileReader reader = new FileReader(PATH)) {
+                properties = new Properties();
+                properties.load(reader);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+    }
+  learner_created: true
+- name: src/chat/client/resources/client_properties.properties
+  visible: true
+  text: |-
+    ip_address=127.0.0.1
+    port=23456
+  learner_created: true
+- name: src/chat/server/Server.java
+  visible: true
+  text: |-
+    package chat.server;
+
+    import chat.server.utils.PropertyHolder;
+
+    import java.io.*;
+    import java.net.InetAddress;
+    import java.net.ServerSocket;
+    import java.net.Socket;
+    import java.net.UnknownHostException;
+    import java.time.Instant;
+    import java.util.ArrayList;
+    import java.util.Scanner;
+    import java.util.concurrent.ExecutorService;
+    import java.util.concurrent.Executors;
+    import java.util.concurrent.ThreadPoolExecutor;
+    import java.util.concurrent.TimeUnit;
+
+    public class Server {
+
+        public static void main(String[] args) {
+            System.out.println("Server started!");
+            String ip = PropertyHolder.properties.getProperty("ip_address");
+            int port = Integer.parseInt(PropertyHolder.properties.getProperty("port"));
+            ExecutorService service = Executors.newFixedThreadPool(2);
+            try (ServerSocket serverSocket = new ServerSocket(port, 50, InetAddress.getByName(ip))) {
+                    try {
+                        Socket socket = serverSocket.accept();
+                        var setUp = new SetUp(socket);
+                        service.submit(setUp);
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                    service.awaitTermination(12, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    class SetUp extends Thread {
+        private Socket socket;
+
+        public SetUp (Socket socket) {
+            this.socket = socket;
+        }
+
+        public void run() {
+            try {
+                DataInputStream is = new DataInputStream(socket.getInputStream());
+                DataOutputStream os = new DataOutputStream(socket.getOutputStream());
+                ExecutorService service = Executors.newFixedThreadPool(2);
+                InputReader ir = new InputReader(is);
+                OutputReader or = new OutputReader(os);
+                service.submit(ir);
+                service.submit(or);
+                service.awaitTermination(11, TimeUnit.SECONDS);
+                is.close();
+                os.close();
+                socket.close();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    class InputReader extends Thread {
+        private DataInputStream is;
+
+        public InputReader(DataInputStream is) {
+            this.is = is;
+        }
+
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    if (is.available() > 0) {
+                        System.out.println(is.readUTF());
+                        break;
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    break;
+                }
+            }
+        }
+    }
+
+    class OutputReader extends Thread {
+        private DataOutputStream os;
+
+        public OutputReader(DataOutputStream os) {
+            this.os = os;
+        }
+
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    Scanner scanner = new Scanner(System.in);
+                    if (scanner.hasNextLine()) {
+                        os.writeUTF(scanner.nextLine());
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    break;
+                }
+            }
+        }
+    }
+  learner_created: true
+feedback_link: https://hyperskill.org/learn/step/5409#comment
+status: Solved
+feedback:
+  message: Congratulations!
+  time: Sat, 16 Jul 2022 15:51:33 UTC
+record: 3
